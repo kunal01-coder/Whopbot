@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -23,13 +23,13 @@ ${faqs ? 'FREQUENTLY ASKED QUESTIONS:\n' + faqs : ''}
 STRICT RULES:
 - Only answer using the information above. Never make things up.
 - Be warm, friendly and use emojis occasionally.
-- Keep answers concise: 2-4 sentences max unless a detailed explanation is truly needed.
-- If you don't have the answer, say exactly: "Great question! I'll flag this for the team to answer shortly 🙌"
-- Never claim to be human. You are WhopBot, a friendly AI support assistant.
-- Never discuss competitors, politics, or anything unrelated to the community.`;
+- Keep answers concise: 2-4 sentences max.
+- If you don't have the answer, say: "Great question! I'll flag this for the team to answer shortly 🙌"
+- Never claim to be human. You are WhopBot.
+- Never discuss anything unrelated to the community.`;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -42,7 +42,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid request.' });
   }
 
-  // Fetch KB from Supabase using userId
   let kb = {};
   try {
     const { data, error } = await supabase
@@ -50,22 +49,10 @@ export default async function handler(req, res) {
       .select('kb')
       .eq('id', userId)
       .single();
-
     if (!error && data?.kb) kb = data.kb;
   } catch (e) {
     console.error('KB fetch error:', e);
   }
-
-  // Log the conversation count for analytics
-  try {
-    await supabase
-      .from('profiles')
-      .update({ 
-        message_count: supabase.rpc('increment', { row_id: userId }),
-        last_active: new Date().toISOString()
-      })
-      .eq('id', userId);
-  } catch (e) { /* non-critical, ignore */ }
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -79,22 +66,21 @@ export default async function handler(req, res) {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 500,
         system: buildSystemPrompt(kb),
-        messages: messages.slice(-10) // keep last 10 messages to control costs
+        messages: messages.slice(-10)
       })
     });
 
     const data = await response.json();
 
     if (data.error) {
-      console.error('Claude API error:', data.error);
-      return res.status(500).json({ reply: "I'm having a moment — please try again in a second! 😅" });
+      return res.status(500).json({ reply: "I'm having a moment — please try again! 😅" });
     }
 
-    const reply = data.content?.[0]?.text || "Sorry, I couldn't generate a response. Please try again!";
+    const reply = data.content?.[0]?.text || "Sorry, I couldn't respond. Please try again!";
     return res.status(200).json({ reply });
 
   } catch (err) {
-    console.error('Chat handler error:', err);
-    return res.status(500).json({ reply: "Something went wrong on my end. Please try again!" });
+    console.error('Chat error:', err);
+    return res.status(500).json({ reply: "Something went wrong. Please try again!" });
   }
-}
+};
