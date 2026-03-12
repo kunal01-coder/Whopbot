@@ -63,7 +63,7 @@ module.exports = async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-       model: 'claude-sonnet-4-5',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
         system: buildSystemPrompt(kb),
         messages: messages.slice(-10)
@@ -78,6 +78,36 @@ module.exports = async function handler(req, res) {
     }
 
     const reply = data.content?.[0]?.text || "Sorry, I couldn't respond. Please try again!";
+
+    // Track real message count
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('questions_handled, messages_log')
+        .eq('id', userId)
+        .single();
+
+      const newCount = (profile?.questions_handled || 0) + 1;
+      const newLog = [
+        ...(profile?.messages_log || []).slice(-49),
+        {
+          question: messages[messages.length - 1]?.content?.slice(0, 100),
+          time: new Date().toISOString()
+        }
+      ];
+
+      await supabase
+        .from('profiles')
+        .update({
+          questions_handled: newCount,
+          messages_log: newLog,
+          last_active: new Date().toISOString()
+        })
+        .eq('id', userId);
+    } catch (trackErr) {
+      console.error('Tracking error:', trackErr);
+    }
+
     return res.status(200).json({ reply });
 
   } catch (err) {
